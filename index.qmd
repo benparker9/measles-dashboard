@@ -1,0 +1,173 @@
+---
+title: "Measles across the world"
+format: 
+  dashboard:
+    orientation: columns
+    theme: united
+    nav-buttons:
+      - icon: github
+        href: https://github.com/quarto-dev/quarto-cliembed-re
+        aria-label: GitHub
+execute:
+  warning: false
+logo: measles.jpg 
+logo-alt: "Meales virus."
+---
+
+```{r}
+#| label: load-packages
+library(tidyverse)
+library(gt)
+library(here)
+
+cases_month <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
+cases_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
+
+# need to do some cleaning for the webscraping process
+cases_month2 <- cases_month |>
+  mutate(month_abb = recode_values(month, 
+                        1 ~ "Jan",
+                        2 ~ "Feb",
+                        3 ~ "Mar",
+                        4 ~ "Apr",
+                        5 ~ "May",
+                        6 ~ "Jun",
+                        7 ~ "Jul",
+                        8 ~ "Aug",
+                        9 ~ "Sep",
+                        10 ~ "Oct",
+                        11 ~ "Nov",
+                        12 ~ "Dec"),
+      country_scrape = str_to_lower(country),
+      country_scrape = str_replace_all(country_scrape, " ", "-"))
+
+api_load <- read.csv("./data/country_demographic.csv")
+# load csv climate data
+scraped_data <- read.csv(here("data", "weather-scrape.csv")) 
+
+cases_month3 <- left_join(cases_month2, scraped_data, by = c("month_abb" = "month",  "country_scrape" = "country" ), 
+                          relationship = "many-to-many")
+meta_data <- left_join(cases_month3,
+                       api_load,
+                       by = c("country" = "name"),
+                       relationship = "many-to-many")
+
+
+```
+
+
+## Col {width="50%"}
+
+hello
+
+## Other Col {width="50%"}
+
+### Boo {height="30%"}
+hello
+
+### Yoo {height="70%"}
+
+<p><strong>Top 15 countries with the highest total measles cases (2023-2025)</strong><br>
+Countries sorted in descending order of total measles cases.
+</p>
+::: panel-tabset 
+
+## 2023 
+
+```{r}
+#| label: twentythree 
+
+cases_year |>
+  filter(year == 2023) |>
+  select(country, measles_total, rubella_total) |>
+  arrange(desc(measles_total)) |>
+  slice_max(measles_total, n=15) |>
+  gt() |>
+  cols_label(
+             country = "Country",
+             measles_total = "Measles Cases",
+             rubella_total = "Rubella Cases") |>
+  tab_style(
+        style = cell_text(weight = "bold"),
+        locations = list(cells_column_labels(), cells_row_groups())) |> 
+  fmt_number(
+        columns  = where(is.numeric),
+        decimals = 1,
+        use_seps = TRUE) |>
+  data_color(
+        columns = everything(),
+        palette = "Oranges"
+       )
+
+
+```
+
+
+## 2024 
+
+```{r}
+#| label: twenty four 
+
+cases_year |>
+  filter(year == 2024) |>
+  select(country, measles_total, rubella_total) |>
+  arrange(desc(measles_total)) |>
+  slice_max(measles_total, n=15) |>
+  gt() |>
+  cols_label(
+             country = "Country",
+             measles_total = "Measles Cases",
+             rubella_total = "Rubella Cases") |>
+  tab_style(
+        style = cell_text(weight = "bold"),
+        locations = list(cells_column_labels(), cells_row_groups())) |> 
+  fmt_number(
+        columns  = where(is.numeric),
+        decimals = 1,
+        use_seps = TRUE) |>
+  data_color(
+        columns = everything(),
+        palette = "Oranges"
+       )
+
+
+```
+
+## 2025 
+
+```{r}
+#| label: twenty five 
+
+cases_year |>
+  filter(year == 2025) |>
+  select(country, measles_total, rubella_total) |>
+  arrange(desc(measles_total)) |>
+  slice_max(measles_total, n=15) |>
+  gt() |>
+  cols_label(
+             country = "Country",
+             measles_total = "Measles Cases",
+             rubella_total = "Rubella Cases") |>
+  tab_style(
+        style = cell_text(weight = "bold"),
+        locations = list(cells_column_labels(), cells_row_groups())) |> 
+  fmt_number(
+        columns  = where(is.numeric),
+        decimals = 1,
+        use_seps = TRUE) |>
+  data_color(
+        columns = everything(),
+        palette = "Oranges"
+       )
+
+
+```
+
+
+
+::: 
+
+
+
+
+
