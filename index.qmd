@@ -6,7 +6,7 @@ format:
     theme: united
     nav-buttons:
       - icon: github
-        href: https://github.com/quarto-dev/quarto-cliembed-re
+        href: https://github.com/benparker9/measles-dashboard
         aria-label: GitHub
 execute:
   warning: false
