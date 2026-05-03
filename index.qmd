@@ -18,7 +18,14 @@ logo-alt: "Meales virus."
 #| label: load-packages
 library(tidyverse)
 library(gt)
+library(httr)
+library(tidyjson)
+library(jsonlite)
+library(rvest)
 library(here)
+library(broom)
+library(ggridges)
+library(scales)
 
 cases_month <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
 cases_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
@@ -58,14 +65,335 @@ meta_data <- left_join(cases_month3,
 
 ## Col {width="50%"}
 
-hello
+### GDP Plots + Model {height="50%"}
+
+<p><strong>PLots about measles and GDP and model </strong><br>
+Description.
+</p>
+
+:::panel-tabset
+
+## Plot 1
+
+```{r}
+
+#| fig-alt: Line plot of measles cases over time comparing five richest countries and five poorest countries from Wikipedia ranking. 
+
+
+richest_5 <- c("Singapore", "Ireland", "Luxembourg", "Norway", "Qatar")
+poorest_5 <- c("Burundi", "Central African Republic", "South Sudan", "Yemen", "Mozambique")
+
+timeseries_df <- meta_data |>
+  mutate(
+    date = make_date(year, month, 1),
+  measles_per_100k = (measles_total / (population * 1000)) * 100000  ) |>
+  filter(country %in% c(richest_5, poorest_5)) |>
+  mutate(
+    wealth_group = case_when(
+      country %in% richest_5 ~ "Richest 5",
+      country %in% poorest_5 ~ "Poorest 5"
+    )
+  )
+ggplot(timeseries_df, aes(x = date, y = measles_per_100k, group = country, color = wealth_group)) +
+  geom_line(linewidth = 1, alpha = 0.85) +
+  scale_color_manual(
+    values = c("Richest 5" = "steelblue4", "Poorest 5" = "firebrick3")
+  ) +
+  labs(
+    title = "Adjusted Measles Rates Over Time (2012-2025)",
+    subtitle = "Top 5 richest vs bottom 5 poorest countries",
+    x = "Time",
+    y = "Measles Cases per 100,000 People",
+    color = "Group") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom")
+```
+
+## Plot 2
+
+```{r}
+#| warning: false
+library(scales)
+
+meta_data |>
+  group_by(country, year) |>
+  summarise(annual_measles = sum(measles_total, na.rm=TRUE),
+            gdp_per_capita = first(gdp_per_capita),
+            region = first(region.x),
+            .groups = "drop") |>
+  group_by(country) |>
+  summarise(mean_annual_measles = mean(annual_measles),
+            gdp_per_capita = first(gdp_per_capita),
+            region = first(region),
+            .grpups = "drop") |>
+  ggplot(aes(x = gdp_per_capita, y = mean_annual_measles)) +
+  geom_hex(bins = 20) +
+  scale_x_log10(labels = dollar_format()) +
+  scale_y_log10(labels = comma_format()) +
+  scale_fill_gradient(low = "blueviolet",
+                      high = "goldenrod") +
+  labs(
+    title = "GDP per Capita vs Mean Annual Measles Cases by Country",
+    x = "GDP per capita (log scale)",
+    y = "Mean annual measles cases (log scale)",
+    fill = "Number of Countries",
+    alt = paste(
+      "Hexbin plot of countries comparing GDP per capita and mean annual measles
+      cases.",
+      "Both axes are on log scale.",
+      "Contries are concentrated along a negatively correlated line, with many 
+      contries having low GDP and high measles cases, while many others have low
+      measles cases and high GDP."
+    )
+  ) +
+  theme_bw() 
+
+```
+
+## Model
+
+```{r}
+#| warning: false
+
+linearreg_df <- meta_data |>
+  select(
+    country,
+    year,
+    gdp,
+    population,
+    measles_total,
+    mean_temp,
+    urban_population,
+    tourists) |>
+  mutate(
+    gdp_per_capita = gdp / population,
+    measles_rate_100k = (measles_total / population) * 100000,
+    log_gdp_per_capita = log(gdp_per_capita),
+    log_measles_rate_100k = log(measles_rate_100k + 1),
+    log_tourists = log(tourists))
+
+  lm(
+    log_measles_rate_100k ~ log_gdp_per_capita + mean_temp + log_tourists + urban_population, 
+    data = linearreg_df) |>
+  tidy() |>
+  gt() |>
+  fmt_number(
+    columns = c(estimate, std.error, statistic, p.value),
+    decimals = 3
+  ) |>
+  cols_label(
+    term = md("**Predictor**"),
+    estimate = md("**Estimate**"),
+    std.error = md("**Std. Error**"),
+    statistic = md("**t-value**"),
+    p.value = md("**p-value**")
+  ) |>
+  tab_header(
+    title = md("**Regression Model Results**"),
+    subtitle = "Predicting logged measles case rate per 100,000"
+  ) |>
+  tab_source_note(
+    source_note = "Linear regression using GDP per capita, mean temperature, number of tourists, and urban population as predictors.")
+```
+
+:::
+
+### GDP Tables {height="50%"}
+
+<p><strong>Tables about measles and GDP </strong><br>
+Description.
+</p>
+
+:::panel-tabset
+
+## Table 1
+
+```{r}
+country_measles <- meta_data |>
+  group_by(country) |>
+  summarize(avg_yearly_measles_cases = mean(measles_total, na.rm = TRUE),
+            avg_population = mean(population, na.rm = TRUE)) |>
+  mutate(cases_per_100k = (avg_yearly_measles_cases / avg_population) * 100000) |>
+  filter(!is.na(cases_per_100k),
+         is.finite(cases_per_100k),
+         cases_per_100k != 0)
+
+rank_type <- c("Highest", "Lowest")
+
+get_rank <- function(rank_type) {
+  if (rank_type == "Highest") {
+    country_measles |>
+      slice_max(cases_per_100k, n = 5, with_ties = FALSE) %>%
+      mutate(group = "5 Highest Cases per 100,000")
+  } else {
+    country_measles |>
+      slice_min(cases_per_100k, n = 5, with_ties = FALSE) %>%
+      mutate(group = "5 Lowest Cases per 100,000")
+  }
+}
+
+table_data <- map_dfr(rank_type, get_rank)
+
+table_data |>
+  gt(groupname_col = "group") |>
+  cols_label(country = "Country",
+             avg_yearly_measles_cases = "Avg. Yearly Measles Cases",
+             avg_population = "Avg. Population",
+             cases_per_100k = "Cases per 100,000 People") |>
+  fmt_number(columns = c(avg_yearly_measles_cases,
+                         avg_population,
+                         cases_per_100k),
+             decimals = 2) |>
+  tab_header(title = "Countries with the Highest and Lowest Measles Cases per 100,000 People",
+             subtitle = "Based on average yearly measles cases and average population") |>
+  tab_style(style = cell_text(weight = "bold"),
+            locations = cells_row_groups()) |>
+  tab_style(style = cell_text(weight = "bold"),
+            locations = cells_title()) |>
+  tab_style(style = cell_text(weight = "bold"),
+            locations = cells_column_labels()) |>
+  tab_source_note(
+    source_note = "Countries are ranked by average yearly measles cases per 100,000 people. The table compares the five countries with the highest rates and the five countries with the lowest rates.")
+```
+## Table 2
+```{r}
+gdppc_for_countries <- function(data, rich_countries, poor_countries) {
+  data |>
+    mutate(
+      gdp_per_capita = (gdp / population) * 1000,
+      group = case_when(
+        country %in% rich_countries ~ "Richest 5",
+        country %in% poor_countries ~ "Poorest 5")) |>
+    filter(country %in% c(rich_countries, poor_countries)) |>
+    group_by(group, country) |>
+    arrange(desc(year), .by_group = TRUE) |>
+    summarize(
+      gdp_per_capita_usd = first(gdp_per_capita),
+      .groups = "drop") |>
+    arrange(group, desc(gdp_per_capita_usd)) |>
+    gt(groupname_col = "group") |>
+    fmt_currency(
+      columns = gdp_per_capita_usd,
+      currency = "USD",
+      decimals = 0) |>
+    cols_label(
+      country = "Country",
+      gdp_per_capita_usd = "GDP per Capita (USD)") |>
+    tab_header(
+      title = md("**GDP per Capita of Selected Richest and Poorest Countries**"),
+      subtitle = "Countries grouped using GDP per capita rankings") |>
+    tab_source_note(
+      source_note = "GDP per capita was calculated as GDP divided by population.
+      GDP appears to be stored in millions of USD, and population appears to be stored in thousands.") |>
+    tab_options(table.width = pct(65))}
+
+gdppc_for_countries(meta_data, richest_5, poorest_5)
+
+```
+:::
+
+
 
 ## Other Col {width="50%"}
 
-### Boo {height="30%"}
-hello
+### Ridge Plot of Regional distributions of Measles Cases {height="50%"}
 
-### Yoo {height="70%"}
+<p><strong>Plots showing how environmental factors affect Measles Cases </strong><br>
+Plot 1 is Ridge and plot 2 is heatmap.
+</p>
+
+:::panel-tabset
+
+## Plot 1
+
+```{r}
+#| fig-height: 8
+#| fig-width: 15
+#| title: "A plot showing the distributions of measles cases per year across world regions."
+#| fig-cap: "Figure 2: Comparison of the distribution of measles cases per year across world regions."
+
+regions_df <- cases_year |>
+  mutate(region = recode_values(region,
+                    "EMRO" ~ "Eastern Mediterranean",
+                    "AFRO" ~ "Africa",
+                    "EURO" ~ "Europe",
+                    "SEARO" ~ "South-East Asia",
+                    "AMRO" ~ "Americas",
+                    "WPRO" ~ "Western Pacific"))
+
+regions_df |>
+  filter(measles_total <= 5000) |>
+  ggplot(aes(x = measles_total, y = fct_reorder(region, measles_total, 
+                                                .desc = FALSE), )) +
+  geom_density_ridges(aes(fill = region),
+                      alpha = 0.5, scale = 1,
+                      show.legend = FALSE) +
+  labs(x = "Total Measles Cases per Year", 
+       y = "", 
+       title = "Comparison of Measles Cases across World Regions"
+       ) +
+  theme(legend.position = "none") +
+  scale_x_continuous(labels = label_comma()) +
+  theme_bw() +
+  scale_fill_viridis_d(option = "B")
+
+```
+## Plot 2
+```{r}
+#| fig-height: 8
+#| fig-width: 15
+#| title: "A plot showing the relationship between climate, natural resources and emissions data and measles/rubella cases."
+#| fig-cap: "Figure 1: Correlation matrix showing the relationship between climate, natural resources and emissions data and measles/rubella cases."
+
+
+library(corrr)
+make_titles <- function(x){
+  # expects a character or factor as an input
+  stopifnot(is.character(x) | is.factor(x))
+  
+  # remove the units at the end of the name
+  str_remove(x, pattern = "(g|mm)$") |> 
+  # replace all _ with spaces
+  str_replace_all(pattern = "_", replacement = " ") |> 
+  # remove extra whitespace on left 
+  str_trim(side = "both") |> 
+  # convert the first letter of each word to upper case
+  str_to_title()
+}
+
+meta_data |>
+  select(month, measles_total, measles_epi_linked, rubella_total, 
+         rubella_epi_linked, mean_temp, mean_precip, surface_area,
+         forested_area, co2_emissions, threatened_species, internet_users) |>
+  correlate(method = "pearson",
+            use = "pairwise.complete.obs") |>
+  rename(term1 = term) |> 
+  pivot_longer(cols = -term1, 
+               names_to = "term2", 
+               values_to = "correlation") |>
+  mutate(
+    across(.cols = c(term1, term2), 
+           .fns = ~ make_titles(.x)
+           )
+    ) |> 
+  ggplot(mapping = aes(x = term1,
+                       y = term2, 
+                       fill = correlation)) +
+  geom_tile() +
+  labs(x = "", 
+       y = "", 
+       title = "Correlation Between Measles/Rubella Cases and Biological Factors", 
+       fill = "Correlation"
+       ) +
+  theme_bw() +
+  scale_fill_viridis_c(option = "B")
+```
+
+:::
+
+### Yoo {height="50%"}
 
 <p><strong>Top 15 countries with the highest total measles cases (2023-2025)</strong><br>
 Countries sorted in descending order of total measles cases.
