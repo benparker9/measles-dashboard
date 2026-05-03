@@ -3,6 +3,7 @@ title: "Measles across the world"
 format: 
   dashboard:
     orientation: columns
+    embed-resources: true
     theme: united
     nav-buttons:
       - icon: github
