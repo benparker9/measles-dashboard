@@ -63,6 +63,7 @@ meta_data <- left_join(cases_month3,
 
 ```
 
+# World Analysis
 
 ## Col {width="50%"}
 
@@ -496,6 +497,8 @@ cases_year |>
 
 ::: 
 
+
+# Yemen Analysis
 
 
 
