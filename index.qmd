@@ -27,7 +27,7 @@ library(here)
 library(broom)
 library(ggridges)
 library(scales)
-
+library(leaflet)
 cases_month <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
 cases_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
 
@@ -498,8 +498,107 @@ cases_year |>
 ::: 
 
 
-# Yemen Analysis
+# Yemen 
 
+
+
+## Descriptions {width="50%"}
+
+### Country Choice {height="50%"}
+**Why Yemen?**    
+Yemen is an **outlier** country with unusually high measles rates. In conjunction, their socio-economic history is complex, with synergistic conditions across access to healthcare, GDP and war. Over the last three years, they have ranked in the top 5 countries with the highest measles rates, while falling in the bottom 5 countries per GDP. Additionally, they have had a [civil war since 2014](https://www.britannica.com/event/Yemeni-Civil-War). Through this analysis, we aim to investigate the relationship between measles rates, GDP and civil war.
+
+**Additional Data Sources**    
+
+- [Worldometer](https://www.worldometers.info/gdp/yemen-gdp/) provides yearly GDP data from the World Bank and International Monetary Fund. The data is collected by WB and IMF through yearly reports and Worldometer contains GDP data for all of the world. The temporal availability of GDP depends on each country. For Yemen, Worldometer has published GDP data from 1990-2026. GDP is a critical measure for socio-economic conditions and is essential for evaluating the relationship between measles and economic status.      
+
+- [Yemen Data Project](https://yemendataproject.org/data/) provides monthly aerial bombing data from 3/2015 - 4/2022 including locations, casualties and the number of bombs dropped. The data has been collected by the Yemen Data Project and is collected through open sources and cross-referenced using a wide range of information. These include local and international news agencies and media reports; social media accounts, including Twitter, Facebook, YouTube, and other video footage, and WhatsApp; reports from international and national NGOs; official records from local authorities; and reports by international human rights groups. This data is critical to highlighting the struggles of the people of Yemen.
+
+
+### Map {height="50%"}
+
+```{r}
+leaflet() |>
+  addProviderTiles("Esri.WorldStreetMap") |>
+  setView(lng = 47.5, lat = 15.5, zoom = 5) |>
+  setMaxBounds(lng1 = 40, lat1 = 11, lng2 = 56, lat2 = 20)
+
+```
+
+
+## Plots {width="50%"}
+
+```{r}
+yemen <- meta_data |>
+  filter(country == "Yemen") |>
+  select(country, year, month, measles_total, rubella_total)
+
+#scrape table for yearly GDP data
+url <- "https://www.worldometers.info/gdp/yemen-gdp/"
+
+result <- tryCatch({
+       read_html(url)
+     }, error = function(e) {
+       message("Failed for ", country, e$message)
+       NULL
+     })
+
+gdp_data <- result |>
+  html_elements("table") |>
+  html_table() 
+
+clean_me <- function(df) {
+  df |>
+    rename(GDP_USD = 2) |>
+    select(Year, GDP_USD) |>
+    mutate(GDP_USD = str_remove_all(GDP_USD, "\\$"),
+    GDP_USD = str_remove_all(GDP_USD, ","),
+    GDP_USD = as.numeric(GDP_USD))
+
+}
+
+gdp_wb <- clean_me(as.data.frame(gdp_data[1]))
+
+gdp_imf <- clean_me(as.data.frame(gdp_data[3])) |>
+  filter(Year < 2014)
+
+# final gdp data to the 90s
+yemen_gdp <- bind_rows(gdp_wb, gdp_imf)
+
+# bombing data 2015 - 2022 
+bomb <- read.csv('yemen-bombing.csv') |>
+  mutate(Date = dmy(Date),
+         month = month(Date),
+  year = year(Date)) |>
+  group_by(month, year) |>
+  summarize(bombing_events = n(),
+            total_casualty = sum(Fatalities + Woman.fatalities, na.rm = TRUE))
+
+
+#final monthly yemen df (only bomb data 2015-2022)
+yemen_monthly <- left_join(yemen, yemen_gdp, by = c("year" = "Year")) |>
+  left_join(bomb, by = c("year", "month")) 
+  
+
+#yearly yemen measles calc
+yemen_measles_yearly <- yemen |>
+  group_by(year) |>
+  summarize(measles_total = sum(measles_total),
+            rubella_total = sum(rubella_total))
+
+# final yearly yemen df
+yemen_yearly <- bomb |>
+  group_by(year) |>
+  summarize(bombing_events = sum(bombing_events, na.rm=TRUE),
+            total_casualty = sum(total_casualty, na.rm=TRUE)) |>
+  right_join(yemen_measles_yearly, by = "year")
+
+
+yemen_yearly |>
+  ggplot(aes(x=year, y=measles_total, size = total_casualty)) +
+  geom_point()
+
+```
 
 
 
