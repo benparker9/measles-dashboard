@@ -12,7 +12,7 @@ format:
 execute:
   warning: false
 logo: measles.jpg 
-logo-alt: "Meales virus."
+logo-alt: "Measles virus."
 ---
 
 ```{r}
@@ -71,10 +71,11 @@ meta_data <- left_join(cases_month3,
 
 ## Col {width="50%"}
 
-### GDP Plots + Model {height="50%"}
+### Measles Rates and Economic Factors {height="50%"}
 
-<p><strong>PLots about measles and GDP and model </strong><br>
-Description.
+<p>
+<strong>Question:</strong> Which country-level factors are associated with higher measles rates?<br>
+This dashboard compares <strong>measles incidence</strong>, <strong>GDP per capita</strong>, and <strong>population-adjusted case rates</strong> across countries from 2012–2025.
 </p>
 
 :::panel-tabset
@@ -92,7 +93,7 @@ poorest_5 <- c("Burundi", "Central African Republic", "South Sudan", "Yemen", "M
 timeseries_df <- meta_data |>
   mutate(
     date = make_date(year, month, 1),
-  measles_per_100k = (measles_total / (population * 1000)) * 100000  ) |>
+  measles_per_100k = (measles_total / population) * 100000  ) |>
   filter(country %in% c(richest_5, poorest_5)) |>
   mutate(
     wealth_group = case_when(
@@ -206,10 +207,10 @@ linearreg_df <- meta_data |>
 
 :::
 
-### GDP Tables {height="50%"}
+### Country Rankings and GDP {height="50%"}
 
-<p><strong>Tables about measles and GDP </strong><br>
-Description.
+<p>
+<strong>Country rankings:</strong> These tables compare countries with the highest and lowest measles rates and summarize GDP per capita for selected high- and low-income countries.
 </p>
 
 :::panel-tabset
@@ -304,106 +305,67 @@ gdppc_for_countries(meta_data, richest_5, poorest_5)
 
 ## Other Col {width="50%"}
 
-### Ridge Plot of Regional distributions of Measles Cases {height="50%"}
-
-<p><strong>Plots showing how environmental factors affect Measles Cases </strong><br>
-Plot 1 is Ridge and plot 2 is heatmap.
+<p>
+This map shows <strong>measles cases per 100,000 people</strong> in 2023. 
+Darker countries had higher population-adjusted measles rates.
 </p>
-
-:::panel-tabset
-
-## Plot 1
 
 ```{r}
 #| fig-height: 8
 #| fig-width: 15
-#| title: "A plot showing the distributions of measles cases per year across world regions."
-#| fig-cap: "Figure 2: Comparison of the distribution of measles cases per year across world regions."
+#| title: "Worldwide Measles Cases in 2023"
+#| fig-cap:  "Countries are colored by measles cases per 100,000 people, making countries with different population sizes easier to compare."
 
-regions_df <- cases_year |>
-  mutate(region = recode_values(region,
-                    "EMRO" ~ "Eastern Mediterranean",
-                    "AFRO" ~ "Africa",
-                    "EURO" ~ "Europe",
-                    "SEARO" ~ "South-East Asia",
-                    "AMRO" ~ "Americas",
-                    "WPRO" ~ "Western Pacific"))
+library(leaflet)
+library(sf)
+library(tidyverse)
+library(rnaturalearth)
 
-regions_df |>
-  filter(measles_total <= 5000) |>
-  ggplot(aes(x = measles_total, y = fct_reorder(region, measles_total, 
-                                                .desc = FALSE), )) +
-  geom_density_ridges(aes(fill = region),
-                      alpha = 0.5, scale = 1,
-                      show.legend = FALSE) +
-  labs(x = "Total Measles Cases per Year", 
-       y = "", 
-       title = "Comparison of Measles Cases across World Regions"
-       ) +
-  theme(legend.position = "none") +
-  scale_x_continuous(labels = label_comma()) +
-  theme_bw() +
-  scale_fill_viridis_d(option = "B")
+
+measles_country <- cases_year |>
+  filter(year == 2023) |>
+  group_by(iso3, country) |>
+  summarise(total_cases = sum(measles_total, na.rm = TRUE),
+            total_population = mean(total_population, na.rm = TRUE),
+            cases_per_100k = (total_cases / total_population) * 100000)
+
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+world_measles <- world |>
+  left_join(measles_country, by = c("iso_a3" = "iso3"))
+
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = world_measles$cases_per_100k,
+  na.color = "#cccccc"
+)
+
+
+leaflet(world_measles) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolygons(fillColor = ~pal(cases_per_100k),
+              color = "black",
+              weight = 0.35,
+              opacity = 0.8,
+              popup = ~paste0("<strong>", country, "</strong><br>",
+                              "Cases: ", total_cases, "<br>",
+                              "Population: ", total_population, "<br>",
+                              "Cases per 100k: ", round(cases_per_100k, 3))) |>
+  addLegend(pal = pal,
+            values = ~cases_per_100k,
+            title = "Cases per 100k",
+            position = "bottomright")
 
 ```
-## Plot 2
-```{r}
-#| fig-height: 8
-#| fig-width: 15
-#| title: "A plot showing the relationship between climate, natural resources and emissions data and measles/rubella cases."
-#| fig-cap: "Figure 1: Correlation matrix showing the relationship between climate, natural resources and emissions data and measles/rubella cases."
 
+### Highest Measles Burden Countries {height="50%"}
 
-library(corrr)
-make_titles <- function(x){
-  # expects a character or factor as an input
-  stopifnot(is.character(x) | is.factor(x))
-  
-  # remove the units at the end of the name
-  str_remove(x, pattern = "(g|mm)$") |> 
-  # replace all _ with spaces
-  str_replace_all(pattern = "_", replacement = " ") |> 
-  # remove extra whitespace on left 
-  str_trim(side = "both") |> 
-  # convert the first letter of each word to upper case
-  str_to_title()
-}
-
-meta_data |>
-  select(month, measles_total, measles_epi_linked, rubella_total, 
-         rubella_epi_linked, mean_temp, mean_precip, surface_area,
-         forested_area, co2_emissions, threatened_species, internet_users) |>
-  correlate(method = "pearson",
-            use = "pairwise.complete.obs") |>
-  rename(term1 = term) |> 
-  pivot_longer(cols = -term1, 
-               names_to = "term2", 
-               values_to = "correlation") |>
-  mutate(
-    across(.cols = c(term1, term2), 
-           .fns = ~ make_titles(.x)
-           )
-    ) |> 
-  ggplot(mapping = aes(x = term1,
-                       y = term2, 
-                       fill = correlation)) +
-  geom_tile() +
-  labs(x = "", 
-       y = "", 
-       title = "Correlation Between Measles/Rubella Cases and Biological Factors", 
-       fill = "Correlation"
-       ) +
-  theme_bw() +
-  scale_fill_viridis_c(option = "B")
-```
-
-:::
-
-### Yoo {height="50%"}
-
-<p><strong>Top 15 countries with the highest total measles cases (2023-2025)</strong><br>
-Countries sorted in descending order of total measles cases.
+<p>
+<strong>Highest burden countries:</strong> These tables show the countries with the largest raw measles case totals from 2023–2025. 
+Raw totals highlight burden, but they are affected by population size.
 </p>
+
 ::: panel-tabset 
 
 ## 2023 
