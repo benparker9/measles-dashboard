@@ -67,25 +67,29 @@ meta_data <- left_join(cases_month3,
 
 ```
 
-# World Analysis
+```{css}
+.question-card {
+  background-color: #FFCC99;
+}
 
-## Col {width="50%"}
+.question-card .card-header {
+  background-color: #FF9966;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
 
-### Measles Rates and Economic Factors {height="50%"}
+.question-text {
+  font-size: 1.8rem;
+  line-height: 1.35;
+}
+```
 
-<p>
-<strong>Question:</strong> Which country-level factors are associated with higher measles rates?<br>
-This dashboard compares <strong>measles incidence</strong>, <strong>GDP per capita</strong>, and <strong>population-adjusted case rates</strong> across countries from 2012–2025.
-</p>
-
-:::panel-tabset
-
-## Plot 1
+# World Analysis {orientation="rows" scrolling="true"}
 
 ```{r}
 
-#| fig-alt: Line plot of measles cases over time comparing five richest countries and five poorest countries from Wikipedia ranking. 
-
+#| label: world-prep
+#| include: false
 
 richest_5 <- c("Singapore", "Ireland", "Luxembourg", "Norway", "Qatar")
 poorest_5 <- c("Burundi", "Central African Republic", "South Sudan", "Yemen", "Mozambique")
@@ -101,24 +105,79 @@ timeseries_df <- meta_data |>
       country %in% poorest_5 ~ "Poorest 5"
     )
   )
-ggplot(timeseries_df, aes(x = date, y = measles_per_100k, group = country, color = wealth_group)) +
-  geom_line(linewidth = 1, alpha = 0.85) +
-  scale_color_manual(
-    values = c("Richest 5" = "steelblue4", "Poorest 5" = "firebrick3")
-  ) +
-  labs(
-    title = "Adjusted Measles Rates Over Time (2012-2025)",
-    subtitle = "Top 5 richest vs bottom 5 poorest countries",
-    x = "Time",
-    y = "Measles Cases per 100,000 People",
-    color = "Group") +
-  theme_bw() +
-  theme(
-    plot.title = element_text(face = "bold"),
-    legend.position = "bottom")
 ```
 
-## Plot 2
+## Row {.flow}
+
+::: {.card .question-card title="Guiding Question" fill="false"}
+<div class="question-text">
+<strong>Which country-level factors are associated with higher measles rates?</strong>
+</div>
+:::
+
+## Row {height="88%"}
+
+### Column{width="55%"}
+
+```{r}
+#| fig-height: 8
+#| fig-width: 15
+#| title: "Worldwide Measles Cases in 2023"
+#| fig-cap:  "This map shows measles cases per 100,000 people in 2023. Darker countries had higher population-adjusted measles rates. Countries are colored by measles cases per 100,000 people, making countries with different population sizes easier to compare."
+
+library(leaflet)
+library(sf)
+library(tidyverse)
+library(rnaturalearth)
+
+
+measles_country <- cases_year |>
+  filter(year == 2023) |>
+  group_by(iso3, country) |>
+  summarise(total_cases = sum(measles_total, na.rm = TRUE),
+            total_population = mean(total_population, na.rm = TRUE),
+            cases_per_100k = (total_cases / total_population) * 100000)
+
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+world_measles <- world |>
+  left_join(measles_country, by = c("iso_a3" = "iso3"))
+
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = world_measles$cases_per_100k,
+  na.color = "#cccccc"
+)
+
+
+leaflet(world_measles) |>
+  addProviderTiles(providers$CartoDB.Positron,
+                   options = providerTileOptions(noWrap = TRUE)) |>
+  setView(lng = 0, lat = 20, zoom = 2) |>
+  setMaxBounds(lng1 = -180, lat1 = -85,
+               lng2 = 180,  lat2 = 85) |>
+  addPolygons(fillColor = ~pal(cases_per_100k),
+              color = "black",
+              weight = 0.35,
+              opacity = 0.8,
+              popup = ~paste0("<strong>", country, "</strong><br>",
+                              "Cases: ", total_cases, "<br>",
+                              "Population: ", total_population, "<br>",
+                              "Cases per 100k: ", round(cases_per_100k, 3))) |>
+  addLegend(pal = pal,
+            values = ~cases_per_100k,
+            title = "Cases per 100k",
+            position = "bottomright")
+
+```
+
+### Column {width="45%"}
+
+
+::: {.card title = "Mealses Rates and Economic Factors"}
+This dashboard compares **measles incidence**, **GDP per capita**, and **population-adjusted case rates** across countries from 2012–2025.
+
 
 ```{r}
 #| warning: false
@@ -159,63 +218,13 @@ meta_data |>
 
 ```
 
-## Model
-
-```{r}
-#| warning: false
-
-linearreg_df <- meta_data |>
-  select(
-    country,
-    year,
-    gdp,
-    population,
-    measles_total,
-    mean_temp,
-    urban_population,
-    tourists) |>
-  mutate(
-    gdp_per_capita = gdp / population,
-    measles_rate_100k = (measles_total / population) * 100000,
-    log_gdp_per_capita = log(gdp_per_capita),
-    log_measles_rate_100k = log(measles_rate_100k + 1),
-    log_tourists = log(tourists))
-
-  lm(
-    log_measles_rate_100k ~ log_gdp_per_capita + mean_temp + log_tourists + urban_population, 
-    data = linearreg_df) |>
-  tidy() |>
-  gt() |>
-  fmt_number(
-    columns = c(estimate, std.error, statistic, p.value),
-    decimals = 3
-  ) |>
-  cols_label(
-    term = md("**Predictor**"),
-    estimate = md("**Estimate**"),
-    std.error = md("**Std. Error**"),
-    statistic = md("**t-value**"),
-    p.value = md("**p-value**")
-  ) |>
-  tab_header(
-    title = md("**Regression Model Results**"),
-    subtitle = "Predicting logged measles case rate per 100,000"
-  ) |>
-  tab_source_note(
-    source_note = "Linear regression using GDP per capita, mean temperature, number of tourists, and urban population as predictors.")
-```
-
 :::
 
-### Country Rankings and GDP {height="50%"}
+::: {.card title = "Country Rankings and GDP"}
 
-<p>
-<strong>Country rankings:</strong> These tables compare countries with the highest and lowest measles rates and summarize GDP per capita for selected high- and low-income countries.
-</p>
+::: {.panel-tabset}
 
-:::panel-tabset
-
-## Table 1
+#### Measles Cases
 
 ```{r}
 country_measles <- meta_data |>
@@ -264,7 +273,9 @@ table_data |>
   tab_source_note(
     source_note = "Countries are ranked by average yearly measles cases per 100,000 people. The table compares the five countries with the highest rates and the five countries with the lowest rates.")
 ```
-## Table 2
+
+#### GDP per Capita
+
 ```{r}
 gdppc_for_countries <- function(data, rich_countries, poor_countries) {
   data |>
@@ -300,168 +311,9 @@ gdppc_for_countries(meta_data, richest_5, poorest_5)
 
 ```
 :::
+:::
 
 
-
-## Other Col {width="50%"}
-
-<p>
-This map shows <strong>measles cases per 100,000 people</strong> in 2023. 
-Darker countries had higher population-adjusted measles rates.
-</p>
-
-```{r}
-#| fig-height: 8
-#| fig-width: 15
-#| title: "Worldwide Measles Cases in 2023"
-#| fig-cap:  "Countries are colored by measles cases per 100,000 people, making countries with different population sizes easier to compare."
-
-library(leaflet)
-library(sf)
-library(tidyverse)
-library(rnaturalearth)
-
-
-measles_country <- cases_year |>
-  filter(year == 2023) |>
-  group_by(iso3, country) |>
-  summarise(total_cases = sum(measles_total, na.rm = TRUE),
-            total_population = mean(total_population, na.rm = TRUE),
-            cases_per_100k = (total_cases / total_population) * 100000)
-
-
-world <- ne_countries(scale = "medium", returnclass = "sf")
-
-world_measles <- world |>
-  left_join(measles_country, by = c("iso_a3" = "iso3"))
-
-pal <- colorNumeric(
-  palette = "YlOrRd",
-  domain = world_measles$cases_per_100k,
-  na.color = "#cccccc"
-)
-
-
-leaflet(world_measles) |>
-  addProviderTiles(providers$CartoDB.Positron) |>
-  addPolygons(fillColor = ~pal(cases_per_100k),
-              color = "black",
-              weight = 0.35,
-              opacity = 0.8,
-              popup = ~paste0("<strong>", country, "</strong><br>",
-                              "Cases: ", total_cases, "<br>",
-                              "Population: ", total_population, "<br>",
-                              "Cases per 100k: ", round(cases_per_100k, 3))) |>
-  addLegend(pal = pal,
-            values = ~cases_per_100k,
-            title = "Cases per 100k",
-            position = "bottomright")
-
-```
-
-### Highest Measles Burden Countries {height="50%"}
-
-<p>
-<strong>Highest burden countries:</strong> These tables show the countries with the largest raw measles case totals from 2023–2025. 
-Raw totals highlight burden, but they are affected by population size.
-</p>
-
-::: panel-tabset 
-
-## 2023 
-
-```{r}
-#| label: twentythree 
-
-cases_year |>
-  filter(year == 2023) |>
-  select(country, measles_total, rubella_total) |>
-  arrange(desc(measles_total)) |>
-  slice_max(measles_total, n=15) |>
-  gt() |>
-  cols_label(
-             country = "Country",
-             measles_total = "Measles Cases",
-             rubella_total = "Rubella Cases") |>
-  tab_style(
-        style = cell_text(weight = "bold"),
-        locations = list(cells_column_labels(), cells_row_groups())) |> 
-  fmt_number(
-        columns  = where(is.numeric),
-        decimals = 1,
-        use_seps = TRUE) |>
-  data_color(
-        columns = everything(),
-        palette = "Oranges"
-       )
-
-
-```
-
-
-## 2024 
-
-```{r}
-#| label: twenty four 
-
-cases_year |>
-  filter(year == 2024) |>
-  select(country, measles_total, rubella_total) |>
-  arrange(desc(measles_total)) |>
-  slice_max(measles_total, n=15) |>
-  gt() |>
-  cols_label(
-             country = "Country",
-             measles_total = "Measles Cases",
-             rubella_total = "Rubella Cases") |>
-  tab_style(
-        style = cell_text(weight = "bold"),
-        locations = list(cells_column_labels(), cells_row_groups())) |> 
-  fmt_number(
-        columns  = where(is.numeric),
-        decimals = 1,
-        use_seps = TRUE) |>
-  data_color(
-        columns = everything(),
-        palette = "Oranges"
-       )
-
-
-```
-
-## 2025 
-
-```{r}
-#| label: twenty five 
-
-cases_year |>
-  filter(year == 2025) |>
-  select(country, measles_total, rubella_total) |>
-  arrange(desc(measles_total)) |>
-  slice_max(measles_total, n=15) |>
-  gt() |>
-  cols_label(
-             country = "Country",
-             measles_total = "Measles Cases",
-             rubella_total = "Rubella Cases") |>
-  tab_style(
-        style = cell_text(weight = "bold"),
-        locations = list(cells_column_labels(), cells_row_groups())) |> 
-  fmt_number(
-        columns  = where(is.numeric),
-        decimals = 1,
-        use_seps = TRUE) |>
-  data_color(
-        columns = everything(),
-        palette = "Oranges"
-       )
-
-
-```
-
-
-
-::: 
 
 
 # Yemen 
