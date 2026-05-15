@@ -34,6 +34,11 @@ library(scales)
 library(gifski)
 library(plotly)
 library(sf)
+library(rsconnect)
+
+rsconnect::setAccountInfo(name='cp-stats-541',
+			  token='5F5597B8A1B0E4981EE9BD1C3C33F692',
+			  secret='XH6GdyWeJdbZIaY16ZZES8UdvjhyEqsFqycKcF1q')
 
 cases_month <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
 cases_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
@@ -520,6 +525,10 @@ htmlOutput("caption")
 ```{r}
 
 leafletOutput("yemen_map") 
+
+
+# run  this in terminal to deploy app 
+#rsconnect::deployApp("./")
 
 ```
 

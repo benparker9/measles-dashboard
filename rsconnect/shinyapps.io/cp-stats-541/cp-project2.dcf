@@ -1,0 +1,10 @@
+name: cp-project2
+title:
+username: cp-stats-541
+account: cp-stats-541
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17367720
+bundleId: 11998952
+url: https://cp-stats-541.shinyapps.io/cp-project2/
+version: 1
