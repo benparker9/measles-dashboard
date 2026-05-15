@@ -3,20 +3,21 @@ title: "Measles across the world"
 format: 
   dashboard:
     orientation: columns
-    embed-resources: true
     theme: united
     nav-buttons:
       - icon: github
         href: https://github.com/benparker9/measles-dashboard
         aria-label: GitHub
+server: shiny
 execute:
   warning: false
-logo: measles.jpg 
+logo: "./www/measles.jpg" 
 logo-alt: "Measles virus."
 ---
 
 ```{r}
 #| label: load-packages
+#| context: setup
 library(tidyverse)
 library(gt)
 library(httr)
@@ -31,6 +32,8 @@ library(leaflet)
 library(gganimate)
 library(scales)
 library(gifski)
+library(plotly)
+library(sf)
 
 cases_month <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_month.csv')
 cases_year <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-06-24/cases_year.csv')
@@ -63,6 +66,98 @@ meta_data <- left_join(cases_month3,
                        api_load,
                        by = c("country" = "name"),
                        relationship = "many-to-many")
+
+yemen <- meta_data |>
+  filter(country == "Yemen") 
+
+url <- "https://www.worldometers.info/gdp/yemen-gdp/"
+
+result <- tryCatch({
+  read_html(url)
+}, error = function(e) {
+  message("Failed to read GDP page: ", e$message)
+  NULL
+})
+
+gdp_data <- result |>
+  html_elements("table") |>
+  html_table()
+
+clean_me <- function(df) {
+  df |>
+    rename(GDP_USD = 2) |>
+    select(Year, GDP_USD) |>
+    mutate(
+      GDP_USD = str_remove_all(GDP_USD, "\\$"),
+      GDP_USD = str_remove_all(GDP_USD, ","),
+      GDP_USD = as.numeric(GDP_USD)
+    )
+}
+
+gdp_wb <- clean_me(as.data.frame(gdp_data[1]))
+
+gdp_imf <- clean_me(as.data.frame(gdp_data[3])) |>
+  filter(Year < 2014)
+
+yemen_gdp <- bind_rows(gdp_wb, gdp_imf)
+
+bomb <- read.csv("yemen-bombing.csv") 
+
+bomb2 <- bomb |>
+  mutate(
+    Date = dmy(Date),
+    month = month(Date),
+    year = year(Date)
+  ) |>
+  group_by(month, year) |>
+  summarize(
+    bombing_events = n(),
+    total_casualty = sum(Fatalities + Woman.fatalities, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+yemen_measles_yearly <- yemen |>
+  group_by(year) |>
+  summarize(
+    measles_total = sum(measles_total, na.rm = TRUE),
+    rubella_total = sum(rubella_total, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+yemen_yearly <- bomb2 |>
+  group_by(year) |>
+  summarize(
+    bombing_events = sum(bombing_events, na.rm = TRUE),
+    total_casualty = sum(total_casualty, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  right_join(yemen_measles_yearly, by = "year") |>
+  left_join(yemen_gdp, by = c("year" = "Year")) |>
+  arrange(year)
+
+yemen_dis <- read_sf('yem_admin1.geojson') |> select(adm1_name, geometry) 
+
+bomb_dis <- bomb |>
+  group_by(Governorate) |>
+  summarize(bombing_events = n()) |>
+  mutate(Governorate = recode(Governorate,
+    "Dhalie"    = "Ad Dali'",
+    "Bayda"     = "Al Bayda",
+    "Hudaydah"  = "Al Hodeidah",
+    "Jawf"      = "Al Jawf",
+    "Maharah"   = "Al Maharah",
+    "Mahwit"    = "Al Mahwit",
+    "Marib"     = "Ma'rib",
+    "Marib "    = "Ma'rib",    # trailing space
+    "Saada"     = "Sa'dah",
+    "Sanaa"     = "Sana'a",
+    "Capital"   = "Sana'a City",
+    "Taiz"      = "Ta'iz",
+    "lahj"      = "Lahj"
+  ))
+
+district <- yemen_dis |>
+  left_join(bomb_dis, by = c("adm1_name" = "Governorate"))
 
 
 ```
@@ -316,151 +411,117 @@ gdppc_for_countries(meta_data, richest_5, poorest_5)
 
 
 
-# Yemen 
+# Yemen {orientation="rows"} 
 
-
-
-## Descriptions {width="50%"}
-
-### Country Choice {height="50%"}
+## Descriptions {height="25%"}
 **Why Yemen?**    
-Yemen is an **outlier** country with unusually high measles rates. In conjunction, their socio-economic history is complex, with synergistic conditions across access to healthcare, GDP and war. Over the last three years, they have ranked in the top 5 countries with the highest measles rates, while falling in the bottom 5 countries per GDP. Additionally, they have had a [civil war since 2014](https://www.britannica.com/event/Yemeni-Civil-War). Through this analysis, we aim to investigate the relationship between measles rates, GDP and civil war.
+Yemen is an **outlier** country with unusually high measles rates. In conjunction, their socio-economic history is complex, with synergistic conditions across access to healthcare, GDP and war. Over the last three years, they have ranked in the top 5 countries with the highest measles rates, while falling in the bottom 5 countries per GDP. Additionally, they have had a [civil war since 2014](https://www.britannica.com/event/Yemeni-Civil-War).
 
-**Additional Data Sources**    
+## Rest {.fill}
 
-- [Worldometer](https://www.worldometers.info/gdp/yemen-gdp/) provides yearly GDP data from the World Bank and International Monetary Fund. The data is collected by WB and IMF through yearly reports and Worldometer contains GDP data for all of the world. The temporal availability of GDP depends on each country. For Yemen, Worldometer has published GDP data from 1990-2026. GDP is a critical measure for socio-economic conditions and is essential for evaluating the relationship between measles and economic status.      
+### Yemen Bubble Plot {width="60%"}
 
-- [Yemen Data Project](https://yemendataproject.org/data/) provides monthly aerial bombing data from 3/2015 - 4/2022 including locations, casualties and the number of bombs dropped. The data has been collected by the Yemen Data Project and is collected through open sources and cross-referenced using a wide range of information. These include local and international news agencies and media reports; social media accounts, including Twitter, Facebook, YouTube, and other video footage, and WhatsApp; reports from international and national NGOs; official records from local authorities; and reports by international human rights groups. This data is critical to highlighting the struggles of the people of Yemen.
-
-
-### Map {height="50%"}
-
-```{r}
-leaflet() |>
-  addProviderTiles("Esri.WorldStreetMap") |>
-  setView(lng = 47.5, lat = 15.5, zoom = 5) |>
-  setMaxBounds(lng1 = 40, lat1 = 11, lng2 = 56, lat2 = 20)
-
-```
 
 
 ```{r}
-#| label: yemen-data-prep
-#| include: false
-
-yemen <- meta_data |>
-  filter(country == "Yemen") |>
-  select(country, year, month, measles_total, rubella_total)
-
-url <- "https://www.worldometers.info/gdp/yemen-gdp/"
-
-result <- tryCatch({
-  read_html(url)
-}, error = function(e) {
-  message("Failed to read GDP page: ", e$message)
-  NULL
+#| context: server
+output$caption <- renderUI({
+  links <- c(
+    "bombing_events" = "https://yemendataproject.org/data/",
+    "total_casualty" = "https://yemendataproject.org/data/",
+    "measles_total"  = "https://www.who.int/data/gho",
+    "rubella_total"  = "https://www.who.int/data/gho",
+    "GDP_USD"        = "https://www.worldometers.info/gdp/yemen-gdp/"
+  )
+  
+  captions <- c(
+    "bombing_events" = "Yemen Data Project",
+    "total_casualty" = "Yemen Data Project",
+    "measles_total"  = "WHO Global Health Observatory",
+    "rubella_total"  = "WHO Global Health Observatory",
+    "GDP_USD"        = "Worldometer"
+  )
+  
+  y_col <- input$y_var
+  
+  tags$p(
+    tags$em("Source: "),
+    tags$a(captions[[y_col]], href = links[[y_col]], target = "_blank")
+  )
 })
 
-gdp_data <- result |>
-  html_elements("table") |>
-  html_table()
-
-clean_me <- function(df) {
-  df |>
-    rename(GDP_USD = 2) |>
-    select(Year, GDP_USD) |>
-    mutate(
-      GDP_USD = str_remove_all(GDP_USD, "\\$"),
-      GDP_USD = str_remove_all(GDP_USD, ","),
-      GDP_USD = as.numeric(GDP_USD)
+output$plot <- renderPlotly({
+  y_col <- input$y_var
+  y_data <- yemen_yearly[[y_col]]
+  
+  axis_labels <- c(
+    "bombing_events" = "Bombing Events",
+    "total_casualty" = "Total Casualties",
+    "measles_total"  = "Measles Cases",
+    "rubella_total"  = "Rubella Cases",
+    "GDP_USD"        = "GDP (USD)"
+  )
+  
+  plot_ly(
+    data = yemen_yearly,
+    x = ~year,
+    y = y_data,
+    type = "scatter",
+    mode = "lines+markers"
+  ) %>%
+    layout(
+      xaxis = list(title = "Year"),
+      yaxis = list(title = axis_labels[[y_col]]),
+      hovermode = "x unified"
     )
-}
+})
 
-gdp_wb <- clean_me(as.data.frame(gdp_data[1]))
+pal <- colorNumeric("viridis", domain = district$bombing_events)
 
-gdp_imf <- clean_me(as.data.frame(gdp_data[3])) |>
-  filter(Year < 2014)
+output$yemen_map <- renderLeaflet({
+  leaflet(district) |>
+    addProviderTiles("Esri.WorldStreetMap") |>
+    setView(lng = 47.5, lat = 15.5, zoom = 5) |>
+    addPolygons(fillColor = ~pal(bombing_events),
+                color = "black",
+                weight = 0.35,
+                opacity = 0.8,
+                popup = ~paste0("<strong>", adm1_name, "</strong><br>",
+                              "Bombing Events: ", bombing_events)) |>
+    addLegend(pal = pal,
+            values = ~bombing_events,
+            title = "Total Bombing Events",
+            position = "bottomright")
 
-yemen_gdp <- bind_rows(gdp_wb, gdp_imf)
+})
 
-bomb <- read.csv("yemen-bombing.csv") |>
-  mutate(
-    Date = dmy(Date),
-    month = month(Date),
-    year = year(Date)
-  ) |>
-  group_by(month, year) |>
-  summarize(
-    bombing_events = n(),
-    total_casualty = sum(Fatalities + Woman.fatalities, na.rm = TRUE),
-    .groups = "drop"
-  )
 
-yemen_measles_yearly <- yemen |>
-  group_by(year) |>
-  summarize(
-    measles_total = sum(measles_total, na.rm = TRUE),
-    rubella_total = sum(rubella_total, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-yemen_yearly <- bomb |>
-  group_by(year) |>
-  summarize(
-    bombing_events = sum(bombing_events, na.rm = TRUE),
-    total_casualty = sum(total_casualty, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  right_join(yemen_measles_yearly, by = "year") |>
-  left_join(yemen_gdp, by = c("year" = "Year"))
 ```
 
 ```{r}
-#| label: save-yemen-bubble-gif
-#| include: false
-#| eval: false
+selectInput("y_var", "Select Y Variable:",
+  choices = c(
+    "Bombing Events"   = "bombing_events",
+    "Total Casualties from Bombing Events" = "total_casualty",
+    "Measles Total"    = "measles_total",
+    "Rubella Total"    = "rubella_total",
+    "GDP (USD)"        = "GDP_USD"
+  )
+)
 
-yemen_bubble_plot <- yemen_yearly |>
-  filter(year >= 2015, year <= 2022) |>
-  ggplot(aes(
-    x = GDP_USD,
-    y = measles_total,
-    size = bombing_events)) +
-  geom_point(alpha = 0.8) +
-  shadow_wake(
-    wake_length = 0.4,
-    alpha = TRUE,
-    size = TRUE) +
-  scale_x_continuous(
-    labels = label_dollar(scale_cut = cut_short_scale())) +
-  scale_size_continuous(
-    range = c(3, 18),
-    name = "Number of bombing events") +
-  labs(
-    title = "Yemen Measles Cases, GDP, and Bombing Events: {closest_state}",
-    x = "GDP",
-    y = "Measles cases",
-    caption = "Years shown: 2015–2022") +
-  theme_bw() +
-  transition_states(
-    year,
-    transition_length = 15,
-    state_length = 15)
-
-anim <- animate(
-  yemen_bubble_plot,
-  nframes = 100,
-  fps = 10,
-  width = 800,
-  height = 600,
-  renderer = gifski_renderer())
-
-anim_save("yemen_bubble_plot.gif", animation = anim)
+plotlyOutput("plot")
+htmlOutput("caption")
 ```
 
-## Plots
 
-### Yemen Bubble Plot
+### Country Choice {width="40%"}
 
-![](yemen_bubble_plot.gif)
+
+```{r}
+
+leafletOutput("yemen_map") 
+
+```
+
+
 
