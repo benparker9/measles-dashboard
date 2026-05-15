@@ -4,6 +4,7 @@ format:
   dashboard:
     orientation: columns
     theme: united
+    embed-resources: true
     nav-buttons:
       - icon: github
         href: https://github.com/benparker9/measles-dashboard
