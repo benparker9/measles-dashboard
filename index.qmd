@@ -3,6 +3,7 @@ title: "Measles across the world"
 format: 
   dashboard:
     orientation: columns
+    scrolling: true
     theme: united
     embed-resources: true
     nav-buttons:
@@ -216,15 +217,16 @@ timeseries_df <- meta_data |>
 </div>
 :::
 
-## Row {height="88%"}
+## Row {.flow}
 
 ### Column{width="55%"}
 
+::: {.card title="Worldwide Measles Cases in 2023" fill="false"}
+
+This map shows measles cases per 100,000 people in 2023. Darker countries had higher population-adjusted measles rates. Countries are colored by measles cases per 100,000 people, making countries with different population sizes easier to compare.
 ```{r}
 #| fig-height: 8
 #| fig-width: 15
-#| title: "Worldwide Measles Cases in 2023"
-#| fig-cap:  "This map shows measles cases per 100,000 people in 2023. Darker countries had higher population-adjusted measles rates. Countries are colored by measles cases per 100,000 people, making countries with different population sizes easier to compare."
 
 library(leaflet)
 library(sf)
@@ -252,10 +254,10 @@ pal <- colorNumeric(
 )
 
 
-leaflet(world_measles) |>
+leaflet(world_measles, height = "1000px") |>
   addProviderTiles(providers$CartoDB.Positron,
                    options = providerTileOptions(noWrap = TRUE)) |>
-  setView(lng = 0, lat = 20, zoom = 2) |>
+  setView(lng = 30, lat = 0, zoom = 3) |>
   setMaxBounds(lng1 = -180, lat1 = -85,
                lng2 = 180,  lat2 = 85) |>
   addPolygons(fillColor = ~pal(cases_per_100k),
@@ -269,10 +271,11 @@ leaflet(world_measles) |>
   addLegend(pal = pal,
             values = ~cases_per_100k,
             title = "Cases per 100k",
-            position = "bottomright")
+            position = "topright")
 
 ```
 
+:::
 ### Column {width="45%"}
 
 
